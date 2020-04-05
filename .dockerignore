@@ -1,0 +1,7 @@
+/Dockerfile
+/.git
+/.gitignore
+
+/xclipd
+/tmp
+/.data
