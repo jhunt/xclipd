@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
 #include <X11/Xlib.h>
 
 // A utf-8 buffer containing the last thing pasted
@@ -12,6 +13,25 @@ static Atom CLIPBOARD;
 static Atom UTF8_STRING;
 static Atom XCLIPD_PROPERTY;
 static Atom INCR;
+
+char * now() {
+	time_t ts;
+	struct tm * tm;
+	char *s, *nl;
+
+	time(&ts);
+	tm = localtime(&ts);
+	if (!tm) {
+		return "(time is unknowable)";
+	}
+
+	s = asctime(tm);
+	nl = strrchr(s, '\n');
+	if (nl) {
+		*nl = '\0';
+	}
+	return s;
+}
 
 void nab(Display *display, Window w) {
 	Window owner;
@@ -25,7 +45,7 @@ void nab(Display *display, Window w) {
 
 	owner = XGetSelectionOwner(display, CLIPBOARD);
 	if (owner == None) {
-		fprintf(stderr, "xclipd: taking ownership of unowned clipboard.\n");
+		fprintf(stderr, "[%s] xclipd: taking ownership of unowned clipboard.\n", now());
 		XSetSelectionOwner(display, CLIPBOARD, w, CurrentTime);
 		return;
 	}
@@ -42,7 +62,7 @@ void nab(Display *display, Window w) {
 				                   &type, &di, &dul, &size, &ignored);
 				XFree(ignored);
 				if (type == INCR) {
-					fprintf(stderr, "xclipd: data too large and INCR mechanism not implemented\n");
+					fprintf(stderr, "[%s] xclipd: data too large and INCR mechanism not implemented\n", now());
 					return;
 				}
 
@@ -53,9 +73,12 @@ void nab(Display *display, Window w) {
 				/* Signal the selection owner that we have successfully read the data. */
 				XDeleteProperty(display, w, XCLIPD_PROPERTY);
 
-				fprintf(stderr, "xclipd: taking on stewardship of %lu bytes on clipboard.\n", strlen((const char *)DATA));
+				fprintf(stderr, "[%s] xclipd: taking on stewardship of %lu bytes on clipboard.\n", now(), strlen((const char *)DATA));
 				XSetSelectionOwner(display, CLIPBOARD, w, CurrentTime);
 				return;
+			} else {
+				fprintf(stderr, "[%s] xclipd: selection owner refused our request for clipboard contents!\n", now());
+				exit(1);
 			}
 			break;
 		}
@@ -123,7 +146,7 @@ int main() {
 
 	display = XOpenDisplay(NULL);
 	if (!display) {
-		fprintf(stderr, "xclipd: could not open X display\n");
+		fprintf(stderr, "[%s] xclipd: could not open X display\n", now());
 		return 1;
 	}
 
@@ -143,6 +166,7 @@ int main() {
 		XNextEvent(display, &ev);
 		switch (ev.type) {
 		case SelectionClear:
+			fprintf(stderr, "[%s] xclipd: lost control of the clipboard; regaining...\n", now());
 			nab(display, target_window);
 			break;
 
@@ -150,9 +174,10 @@ int main() {
 			sev = (XSelectionRequestEvent*)&ev.xselectionrequest;
 			/* Property is set to None by "obsolete" clients. */
 			if (!DATA || sev->target != UTF8_STRING || sev->property == None) {
+				fprintf(stderr, "[%s] xclipd: denying (unfulfillable) request for clipboard data\n", now());
 				deny(display, sev);
 			} else {
-				fprintf(stderr, "xclipd: fulfilling request for clipboard data...\n");
+				fprintf(stderr, "[%s] xclipd: fulfilling request for clipboard data\n", now());
 				fulfill(display, sev, UTF8_STRING);
 			}
 			break;
